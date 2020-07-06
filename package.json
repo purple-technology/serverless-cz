@@ -1,0 +1,25 @@
+{
+	"name": "serverless-cz",
+	"version": "1.0.0",
+	"engines": {
+		"node": "12.x"
+	},
+	"scripts": {
+		"bootstrap": "lerna bootstrap",
+		"postinstall": "npm run bootstrap",
+		"lint": "prettier -c \"**/*.{js,json,yml}\"",
+		"lint:fix": "npm run lint -- --write"
+	},
+	"lint-staged": {
+		"*.{js,json,yml}": "prettier --write"
+	},
+	"husky": {
+		"hooks": {
+			"pre-commit": "lint-staged"
+		}
+	},
+	"devDependencies": {
+		"lerna": "^3.19.0",
+		"prettier": "^2.0.1"
+	}
+}

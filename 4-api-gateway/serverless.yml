@@ -1,0 +1,17 @@
+service: four-api-gateway
+
+plugins:
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: eu-central-1
+
+functions:
+  customers:
+    handler: src/customers.handler
+    events:
+      - http:
+          path: /customers
+          method: post
