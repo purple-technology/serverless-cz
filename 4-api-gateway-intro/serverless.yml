@@ -14,4 +14,4 @@ functions:
     events:
       - http:
           path: /customers
-          method: post
+          method: get
