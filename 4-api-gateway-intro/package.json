@@ -5,7 +5,7 @@
 		"node": "12.x"
 	},
 	"scripts": {
-		"deploy": "serverless deploy -v",
+		"deploy": "serverless deploy",
 		"remove": "serverless remove",
 		"info": "serverless info -v",
 		"dev": "serverless offline"
