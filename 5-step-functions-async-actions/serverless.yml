@@ -1,0 +1,207 @@
+service: five-step-functions-async-actions
+
+plugins:
+  - serverless-step-functions
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  region: eu-central-1
+  environment:
+    ORDERS_TABLE_NAME: { 'Ref': 'OrdersTable' }
+    ORDER_PROCESSING_ACTIONS_TABLE_NAME: { 'Ref': 'OrderProcessingActionsTable' }
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:GetItem
+        - dynamodb:DeleteItem
+      Resource:
+        [
+          { 'Fn::GetAtt': ['OrdersTable', 'Arn'] },
+          { 'Fn::GetAtt': ['OrderProcessingActionsTable', 'Arn'] }
+        ]
+    - Effect: 'Allow'
+      Action:
+        - states:SendTaskSuccess
+        - states:SendTaskFailure
+      Resource: '*'
+
+functions:
+  getOrder:
+    handler: src/getOrder.handler
+    events:
+      - http:
+          path: order/{id}
+          method: GET
+          request:
+            parameters:
+              paths:
+                id: true
+  notifyCustomer:
+    handler: src/notifyCustomer.handler
+  createAction:
+    handler: src/createAction.handler
+  finishAction:
+    handler: src/finishAction.handler
+    events:
+      - http:
+          path: order/update
+          method: POST
+
+stepFunctions:
+  validate: true
+  stateMachines:
+    processOrder:
+      events:
+        - http:
+            path: order
+            method: POST
+      definition:
+        StartAt: Set PENDING status
+        States:
+          Set PENDING status:
+            Type: Pass
+            Parameters:
+              status: PENDING
+              'items.$': $.items
+            ResultPath: $
+            Next: Create order record
+          Create order record:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:putItem"
+            Parameters:
+              TableName: { 'Ref': 'OrdersTable' }
+              Item:
+                orderId:
+                  'S.$': $$.Execution.Id
+                items:
+                  'SS.$': $.items
+                status:
+                  'S.$': $.status
+            ResultPath: null
+            Next: Notify customer PENDING
+          Notify customer PENDING:
+            Type: Task
+            Resource: { "Fn::GetAtt": ["notifyCustomer", "Arn"] }
+            Next: Wait for status update from PENDING
+          Wait for status update from PENDING:
+            Type: Task
+            Resource: "arn:aws:states:::lambda:invoke.waitForTaskToken"
+            Parameters:
+              FunctionName: { 'Ref': 'createAction' }
+              Payload:
+               'executionId.$': $$.Execution.Id
+               'taskToken.$': '$$.Task.Token'
+               'status.$': '$.status'         
+            ResultPath: null
+            Catch:
+              - ErrorEquals: ['States.TaskFailed']
+                ResultPath: null
+                Next: Set ERROR status
+            Next: Set PROCESSING status
+          Set PROCESSING status:
+            Type: Pass
+            Parameters:
+              status: PROCESSING
+              'items.$': $.items
+            ResultPath: '$'
+            Next: Update order record PROCESSING
+          Update order record PROCESSING:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:updateItem"
+            Parameters:
+              TableName: { 'Ref': 'OrdersTable' }
+              Key:
+                orderId:
+                  'S.$': $$.Execution.Id
+              ExpressionAttributeValues:
+                ':s':
+                  'S.$': $.status
+              ExpressionAttributeNames:
+                '#s': "status"
+              UpdateExpression: 'set #s = :s'
+            ResultPath: null
+            Next: Notify customer PROCESSING
+          Notify customer PROCESSING:
+            Type: Task
+            Resource: { "Fn::GetAtt": ["notifyCustomer", "Arn"] }
+            Next: Wait for status update from PROCESSING
+          Wait for status update from PROCESSING:
+            Type: Task
+            Resource: "arn:aws:states:::lambda:invoke.waitForTaskToken"
+            Parameters:
+              FunctionName: { 'Ref': 'createAction' }
+              Payload:
+               'executionId.$': $$.Execution.Id
+               'taskToken.$': '$$.Task.Token'
+               'status.$': '$.status'         
+            ResultPath: null
+            Catch:
+              - ErrorEquals: ['States.TaskFailed']
+                ResultPath: null
+                Next: Set ERROR status
+            Next: Set SENT status
+          Set SENT status:
+            Type: Pass
+            Parameters:
+              status: SENT
+              'items.$': $.items
+            ResultPath: '$'
+            Next: Update order record SENT
+          Update order record SENT:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:updateItem"
+            Parameters:
+              TableName: { 'Ref': 'OrdersTable' }
+              Key:
+                orderId:
+                  'S.$': $$.Execution.Id
+              ExpressionAttributeValues:
+                ':s':
+                  'S.$': $.status
+              ExpressionAttributeNames:
+                '#s': "status"
+              UpdateExpression: 'set #s = :s'
+            ResultPath: null
+            Next: Notify customer SENT
+          Notify customer SENT:
+            Type: Task
+            Resource: { "Fn::GetAtt": ["notifyCustomer", "Arn"] }
+            End: true
+          Set ERROR status:
+            Type: Pass
+            Parameters:
+              status: ERROR
+              'items.$': $.items
+            ResultPath: '$'
+            Next: Notify customer ERROR
+          Notify customer ERROR:
+            Type: Task
+            Resource: { "Fn::GetAtt": ["notifyCustomer", "Arn"] }
+            End: true
+
+resources:
+  Resources:
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: orders
+        AttributeDefinitions:
+          - AttributeName: orderId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: orderId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    OrderProcessingActionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: orderProcessingActions
+        AttributeDefinitions:
+          - AttributeName: executionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: executionId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
