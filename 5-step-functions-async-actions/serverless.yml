@@ -8,8 +8,8 @@ provider:
   runtime: nodejs14.x
   region: eu-central-1
   environment:
-    ORDERS_TABLE_NAME: { 'Ref': 'OrdersTable' }
-    ORDER_PROCESSING_ACTIONS_TABLE_NAME: { 'Ref': 'OrderProcessingActionsTable' }
+    ORDERS_TABLE_NAME: { "Ref": "OrdersTable" }
+    ORDER_PROCESSING_ACTIONS_TABLE_NAME: { "Ref": "OrderProcessingActionsTable" }
   iamRoleStatements:
     - Effect: "Allow"
       Action:
@@ -18,14 +18,14 @@ provider:
         - dynamodb:DeleteItem
       Resource:
         [
-          { 'Fn::GetAtt': ['OrdersTable', 'Arn'] },
-          { 'Fn::GetAtt': ['OrderProcessingActionsTable', 'Arn'] }
+          { "Fn::GetAtt": ["OrdersTable", "Arn"] },
+          { "Fn::GetAtt": ["OrderProcessingActionsTable", "Arn"] }
         ]
-    - Effect: 'Allow'
+    - Effect: "Allow"
       Action:
         - states:SendTaskSuccess
         - states:SendTaskFailure
-      Resource: '*'
+      Resource: "*"
 
 functions:
   getOrder:
@@ -64,21 +64,21 @@ stepFunctions:
             Type: Pass
             Parameters:
               status: PENDING
-              'items.$': $.items
+              "items.$": $.items
             ResultPath: $
             Next: Create order record
           Create order record:
             Type: Task
             Resource: "arn:aws:states:::dynamodb:putItem"
             Parameters:
-              TableName: { 'Ref': 'OrdersTable' }
+              TableName: { "Ref": "OrdersTable" }
               Item:
                 orderId:
-                  'S.$': $$.Execution.Id
+                  "S.$": $$.Execution.Id
                 items:
-                  'SS.$': $.items
+                  "SS.$": $.items
                 status:
-                  'S.$': $.status
+                  "S.$": $.status
             ResultPath: null
             Next: Notify customer PENDING
           Notify customer PENDING:
@@ -89,14 +89,14 @@ stepFunctions:
             Type: Task
             Resource: "arn:aws:states:::lambda:invoke.waitForTaskToken"
             Parameters:
-              FunctionName: { 'Ref': 'createAction' }
+              FunctionName: { "Ref": "createAction" }
               Payload:
-               'executionId.$': $$.Execution.Id
-               'taskToken.$': '$$.Task.Token'
-               'status.$': '$.status'         
+               "executionId.$": $$.Execution.Id
+               "taskToken.$": $$.Task.Token
+               "status.$": $.status
             ResultPath: null
             Catch:
-              - ErrorEquals: ['States.TaskFailed']
+              - ErrorEquals: ["States.TaskFailed"]
                 ResultPath: null
                 Next: Set ERROR status
             Next: Set PROCESSING status
@@ -104,23 +104,23 @@ stepFunctions:
             Type: Pass
             Parameters:
               status: PROCESSING
-              'items.$': $.items
-            ResultPath: '$'
+              "items.$": $.items
+            ResultPath: $
             Next: Update order record PROCESSING
           Update order record PROCESSING:
             Type: Task
             Resource: "arn:aws:states:::dynamodb:updateItem"
             Parameters:
-              TableName: { 'Ref': 'OrdersTable' }
+              TableName: { "Ref": "OrdersTable" }
               Key:
                 orderId:
-                  'S.$': $$.Execution.Id
+                  "S.$": $$.Execution.Id
               ExpressionAttributeValues:
-                ':s':
-                  'S.$': $.status
+                ":s":
+                  "S.$": $.status
               ExpressionAttributeNames:
-                '#s': "status"
-              UpdateExpression: 'set #s = :s'
+                "#s": "status"
+              UpdateExpression: "set #s = :s"
             ResultPath: null
             Next: Notify customer PROCESSING
           Notify customer PROCESSING:
@@ -131,14 +131,14 @@ stepFunctions:
             Type: Task
             Resource: "arn:aws:states:::lambda:invoke.waitForTaskToken"
             Parameters:
-              FunctionName: { 'Ref': 'createAction' }
+              FunctionName: { "Ref": "createAction" }
               Payload:
-               'executionId.$': $$.Execution.Id
-               'taskToken.$': '$$.Task.Token'
-               'status.$': '$.status'         
+               "executionId.$": $$.Execution.Id
+               "taskToken.$": "$$.Task.Token"
+               "status.$": "$.status"         
             ResultPath: null
             Catch:
-              - ErrorEquals: ['States.TaskFailed']
+              - ErrorEquals: ["States.TaskFailed"]
                 ResultPath: null
                 Next: Set ERROR status
             Next: Set SENT status
@@ -146,23 +146,23 @@ stepFunctions:
             Type: Pass
             Parameters:
               status: SENT
-              'items.$': $.items
-            ResultPath: '$'
+              "items.$": $.items
+            ResultPath: $
             Next: Update order record SENT
           Update order record SENT:
             Type: Task
             Resource: "arn:aws:states:::dynamodb:updateItem"
             Parameters:
-              TableName: { 'Ref': 'OrdersTable' }
+              TableName: { "Ref": "OrdersTable" }
               Key:
                 orderId:
-                  'S.$': $$.Execution.Id
+                  "S.$": $$.Execution.Id
               ExpressionAttributeValues:
-                ':s':
-                  'S.$': $.status
+                ":s":
+                  "S.$": $.status
               ExpressionAttributeNames:
-                '#s': "status"
-              UpdateExpression: 'set #s = :s'
+                "#s": "status"
+              UpdateExpression: "set #s = :s"
             ResultPath: null
             Next: Notify customer SENT
           Notify customer SENT:
@@ -173,8 +173,8 @@ stepFunctions:
             Type: Pass
             Parameters:
               status: ERROR
-              'items.$': $.items
-            ResultPath: '$'
+              "items.$": $.items
+            ResultPath: $
             Next: Notify customer ERROR
           Notify customer ERROR:
             Type: Task
