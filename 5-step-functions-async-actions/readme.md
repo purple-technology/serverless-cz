@@ -13,13 +13,13 @@ Run `npm run remove`
 
 #### Make an order
 Call `POST /order` with payload:
-```
+```json
 {
   "items": ["really nice t-shirt", "pants"]
 }
 ```
 The response should look like:
-```
+```json
 {
   "executionArn": "arn:aws:states:eu-central-1:...",
   "startDate": ...
@@ -29,7 +29,7 @@ Save the executionArn somewhere, it is used as a order ID in the state machine.
 
 #### Get the order status
 After the order is created, use the orderId from the previous operation to call `GET /order/arn:aws:states:eu-central-1:...` to get the order status. The respose should be:
-```
+```json
 {
   "items": [
     "pants",
@@ -42,7 +42,7 @@ After the order is created, use the orderId from the previous operation to call 
 
 #### Update the order status
 Call `POST /order/update` with payload:
-```
+```json
 {
   "executionId": "arn:aws:states:eu-central-1:...",
   "success": true
