@@ -1,0 +1,144 @@
+service: six-recoveries
+
+plugins:
+  - serverless-step-functions
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  region: eu-central-1
+  environment:
+    ORDERS_TABLE_NAME: { "Ref": "OrdersTable" }
+    RECOVERIES_TABLE_NAME: { "Ref": "RecoveriesTable" }
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:GetItem
+        - dynamodb:DeleteItem
+      Resource: [{ "Fn::GetAtt": ["OrdersTable", "Arn"] }, { "Fn::GetAtt": ["RecoveriesTable", "Arn"] }]
+    - Effect: "Allow"
+      Action:
+        - states:SendTaskSuccess
+        - states:SendTaskFailure
+      Resource: { "Fn::Join": ["", ["arn:aws:states:", { "Ref": "AWS::Region" }, ":", { "Ref": "AWS::AccountId" }, ":stateMachine:ProcessOrderSM-*"]] }
+
+functions:
+  handleError:
+    handler: src/handleError.handler
+    environment:
+      FINISH_RECOVERY_API: { "Fn::Join": ["", ["https://", { "Ref": "ApiGatewayRestApi" }, ".execute-api.", { "Ref": "AWS::Region" }, ".", { "Ref": "AWS::URLSuffix" }, "/", "${self:provider.stage}", "/finish-recovery"]] }
+  externalDummyAPI:
+    handler: src/externalDummyAPI.handler
+    events:
+      - http:
+          path: /external-api/{id}
+          method: GET
+          request:
+            parameters:
+              paths:
+                id: true
+  finishRecovery:
+    handler: src/finishRecovery.handler
+    events:
+      - http:
+          path: /finish-recovery/{id}
+          method: GET
+          request:
+            parameters:
+              paths:
+                id: true
+  checkProductAvailability:
+    handler: src/checkProductAvailability.handler
+    environment:
+      EXTERNAL_API: { "Fn::Join": ["", ["https://", { "Ref": "ApiGatewayRestApi" }, ".execute-api.", { "Ref": "AWS::Region" }, ".", { "Ref": "AWS::URLSuffix" }, "/", "${self:provider.stage}", "/external-api"]] }
+
+stepFunctions:
+  validate: true
+  stateMachines:
+    processOrder:
+      id: ProcessOrderSM
+      events:
+        - http:
+            path: order
+            method: POST
+      definition:
+        StartAt: Create order record
+        States:
+          Create order record:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:putItem"
+            Parameters:
+              TableName: { "Ref": "OrdersTable" }
+              Item:
+                orderId:
+                  "S.$": $$.Execution.Id
+                item:
+                  "S.$": $.item
+                status:
+                  "S": CREATED
+            ResultPath: null
+            Next: Check availability
+          Check availability:
+            Type: Task
+            Resource: { "Fn::GetAtt": ["checkProductAvailability", "Arn"] }
+            Retry:
+              - ErrorEquals: ["States.ALL"]
+                IntervalSeconds: 120
+                MaxAttempts: 6
+                BackoffRate: 2
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: Check availability recovery
+                ResultPath: $.lambdaFunctionError
+            Next: Update order record FINISHED
+          Update order record FINISHED:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:updateItem"
+            Parameters:
+              TableName: { "Ref": "OrdersTable" }
+              Key:
+                orderId:
+                  "S.$": $$.Execution.Id
+              ExpressionAttributeValues:
+                ":s":
+                  "S": FINISHED
+              ExpressionAttributeNames:
+                "#s": "status"
+              UpdateExpression: "set #s = :s"
+            ResultPath: null
+            End: true
+          Check availability recovery:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Parameters:
+              FunctionName: { "Fn::GetAtt": ["handleError", "Arn"] }
+              Payload:
+                Input.$: $
+                Context.$: $$
+            Next: Check availability
+
+resources:
+  Resources:
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: orders
+        AttributeDefinitions:
+          - AttributeName: orderId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: orderId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    RecoveriesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: recoveries
+        AttributeDefinitions:
+          - AttributeName: executionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: executionId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST

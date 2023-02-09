@@ -1,0 +1,21 @@
+{
+	"name": "6-recoveries",
+	"version": "1.0.0",
+	"engines": {
+		"node": "14.x"
+	},
+	"scripts": {
+		"deploy": "serverless deploy",
+		"remove": "serverless remove",
+		"info": "serverless info -v"
+	},
+	"devDependencies": {
+		"@purple/serverless-git-branch-stage-plugin": "^1.3.2",
+		"aws-sdk": "^2.1048.0",
+		"serverless": "^2.69.1",
+		"serverless-step-functions": "^3.5.1"
+	},
+	"dependencies": {
+		"axios": "^0.24.0"
+	}
+}
